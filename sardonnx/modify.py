@@ -3,8 +3,24 @@ Modifications to existing ONNX models.
 """
 
 import itertools
+from io import BytesIO
 
-from onnx import GraphProto
+import onnx
+from onnx import GraphProto, ModelProto
+
+
+def clone_model(model: ModelProto) -> ModelProto:
+    """
+    Clones an ONNX model by serializing and deserializing it.
+
+    :param model: The ONNX model to clone.
+
+    :return: A deep copy of the ONNX ModelProto object.
+    """
+    buffer = BytesIO()
+    onnx.save_model(model, buffer)
+    buffer.seek(0)
+    return onnx.load_model(buffer)
 
 
 def set_batch(graph: GraphProto, value: int | str) -> None:
