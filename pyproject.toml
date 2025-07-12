@@ -23,8 +23,5 @@ tensorflow = [
     "tf2onnx"
 ]
 
-[tool.uv]
-required-environments = ["platform=win_amd64"]
-
 [tool.isort]
 profile = "black"
