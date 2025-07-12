@@ -4,7 +4,9 @@ Explore existing ONNX models.
 
 from collections import defaultdict
 
-from onnx import GraphProto, NodeProto
+import numpy as np
+import onnx
+from onnx import GraphProto, NodeProto, TensorProto
 
 
 class MalformedGraphError(ValueError):
@@ -109,3 +111,17 @@ def last_op_nodes(
         next_frontier = []
         depth += 1
     return results, depths
+
+
+def decode_tensor_proto(tensor: TensorProto) -> np.ndarray:
+    """
+    Converts a TensorProto to the NumPy array it represents.
+
+    :param tensor: The TensorProto to decode.
+
+    :return: The NumPy equivalent.
+    """
+    entry = onnx.mapping.TENSOR_TYPE_MAP.get(tensor.data_type)
+    if not entry:
+        raise ValueError(f"Invalid dtype of index {tensor.data_type}")
+    return np.frombuffer(tensor.raw_data, dtype=entry.np_dtype).reshape(tensor.dims)
