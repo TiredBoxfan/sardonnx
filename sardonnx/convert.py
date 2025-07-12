@@ -3,12 +3,13 @@ Conversion utilities for converting between supported frameworks and ONNX.
 """
 
 import inspect
+import itertools
 from io import BytesIO
 from typing import Iterable, Union
 
 import numpy as np
 import onnx
-from onnx import ModelProto
+from onnx import GraphProto, ModelProto
 from typing_extensions import TypeAlias
 
 try:
@@ -162,3 +163,58 @@ def keras_to_onnx(
     ]
     onnx_model, _ = tf2onnx.convert.from_keras(model, signature, opset)
     return onnx_model
+
+
+def set_batch(graph: GraphProto, value: int | str) -> None:
+    """
+    Sets the first dimension of the graph, persumed to be the batch dimension,
+    in place.
+
+    :param graph: The ONNX GraphProto object to modify.
+    :param value: The value to set the first dimension to.
+    """
+    for val in itertools.chain(graph.input, graph.output, graph.value_info):
+        if not val.HasField("tensor_type"):
+            continue
+        shape = val.type.tensor_type.shape
+        if len(shape.dim) < 1:
+            continue  # No batch dimension to set.
+
+        dim = shape.dim[0]
+        dim.ClearField("dim_value")
+        dim.ClearField("dim_param")
+        if isinstance(value, int):
+            dim.dim_value = value
+        else:
+            dim.dim_param = value
+
+
+def to_onnx(
+    model: ModelType,
+    inputs: Iterable[TensorType],
+    opset: int,
+    dynamic_batch: bool = True,
+) -> ModelProto:
+    """
+    Converts a model from any supported framework to an ONNX model.
+    If the model is already an ONNX model, it will be cloned then updated
+    accordingly.
+
+    :param model: The model to convert.
+    :param inputs: Sample inputs to the model matching the model's forward
+        signature as an iterable sequence, even if only one input is provided.
+    :param opset: The ONNX opset version to use.
+    :param dynamic_batch: Whether to interpret the first dimension of the inputs
+        as a dynamic batch size.
+    """
+    if isinstance(model, ModelProto):
+        # `convert_version` does NOT modify in place.
+        model = onnx.version_converter.convert_version(model, opset)
+        if dynamic_batch:
+            set_batch(model.graph, "batch_size")
+        return model
+    if torch and isinstance(model, torch.nn.Module):
+        return torch_to_onnx(model, inputs, opset, dynamic_batch)
+    if tf and isinstance(model, tf.keras.Model):
+        return keras_to_onnx(model, opset, dynamic_batch)
+    raise ValueError(f"Unsupported model type: {type(model)}")
