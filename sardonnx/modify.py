@@ -2,12 +2,17 @@
 Modifications to existing ONNX models.
 """
 
+import copy
 import itertools
 from io import BytesIO
 from tempfile import NamedTemporaryFile
 
 import onnx
-from onnx import GraphProto, ModelProto
+from google.protobuf.internal.containers import (
+    RepeatedCompositeFieldContainer,
+    RepeatedScalarFieldContainer,
+)
+from onnx import GraphProto, ModelProto, TensorProto, ValueInfoProto
 
 
 def clone_model(model: ModelProto) -> ModelProto:
@@ -75,6 +80,25 @@ def set_batch(graph: GraphProto, value: int | str) -> None:
             dim.dim_param = value
 
 
+def _namespace_prefix(
+    name: str,
+    prefix: str,
+) -> str:
+    """
+    Prefixes a name with a given prefix using a content-appropriate separator.
+    Names that start with '/' are treated as paths, while other names will use
+    dot notation. Empty names are returned unchanged.
+
+    :param name: The name to prefix.
+    :param prefix: The prefix to apply.
+
+    :return: The prefixed name.
+    """
+    if not name:
+        return ""
+    return f"/{prefix}{name}" if name.startswith("/") else f"{prefix}.{name}"
+
+
 def rename_components(graph: GraphProto, mapping: dict[str, str]) -> None:
     """
     Renames the components of an ONNX graph in place for all proto types.
@@ -102,3 +126,57 @@ def rename_components(graph: GraphProto, mapping: dict[str, str]) -> None:
 
     for val in graph.value_info:
         val.name = mapping.get(val.name, val.name)
+
+
+def attach_secondary(primary: GraphProto, secondary: GraphProto, prefix: str) -> None:
+    """
+    Attaches the secondary graph onto the primary graph in place, prefixing
+    the components of the secondary graph to avoid collisions. It is assumed
+    that the inputs to the secondary graph are already present in the supplied
+    primary graph. No validation of the model is done.
+
+    :param primary: The primary graph to attach to.
+    :param secondary: The secondary graph to attach.
+    :param prefix: The prefix to apply to the secondary graph.
+    """
+    prefix = prefix.strip("/. ")
+    exclude = {inp.name for inp in secondary.input}
+
+    def _add_group(
+        target: RepeatedCompositeFieldContainer[ValueInfoProto | TensorProto],
+        source: RepeatedCompositeFieldContainer[ValueInfoProto | TensorProto],
+    ) -> None:
+        """
+        Adds prefixed deepcopies of the source protos to the target.
+
+        :param target: The target to add to.
+        :param source: The source to add from.
+        """
+        for val in source:
+            if val.name in exclude:
+                continue
+            clone = copy.deepcopy(val)
+            clone.name = _namespace_prefix(clone.name, prefix)
+            target.append(clone)
+
+    _add_group(primary.initializer, secondary.initializer)
+    _add_group(primary.output, secondary.output)
+    _add_group(primary.value_info, secondary.value_info)
+
+    def _node_io_prefix(seq: RepeatedScalarFieldContainer[str]) -> None:
+        """
+        Prefixes a sequence of names with the given prefix in place.
+
+        :param seq: The sequence of names to prefix.
+        """
+        for i, item in enumerate(seq):
+            if item not in exclude:
+                seq[i] = _namespace_prefix(item, prefix)
+
+    for node in secondary.node:
+        clone = copy.deepcopy(node)
+        # Prefix node names consistently with / to simulate namespaces.
+        clone.name = f"/{prefix}/{clone.name.lstrip('/')}"
+        _node_io_prefix(clone.input)
+        _node_io_prefix(clone.output)
+        primary.node.append(clone)
