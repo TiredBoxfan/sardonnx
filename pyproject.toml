@@ -1,0 +1,20 @@
+[project]
+name = "SARDONNX"
+version = "0.0.1"
+description = "Structured Augmentation, Recomposition, and Deduplication for ONNX"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["numpy", "onnx"]
+
+[project.optional-dependencies]
+dev = [
+    "black",
+    "isort",
+    "mypy",
+    "pre-commit",
+    "pylint",
+    "ruff"
+]
+
+[tool.isort]
+profile = "black"
