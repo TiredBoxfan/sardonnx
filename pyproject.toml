@@ -16,7 +16,8 @@ dev = [
     "ruff"
 ]
 torch = [
-    "torch"
+    "torch",
+    "torchvision"
 ]
 tensorflow = [
     "tensorflow",
