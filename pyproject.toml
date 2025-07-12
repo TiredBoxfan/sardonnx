@@ -1,5 +1,5 @@
 [project]
-name = "SARDONNX"
+name = "sardonnx"
 version = "0.0.1"
 description = "Structured Augmentation, Recomposition, and Deduplication for ONNX"
 readme = "README.md"
