@@ -2,9 +2,12 @@
 Conversion utilities for converting between supported frameworks and ONNX.
 """
 
-from typing import Union
+import inspect
+from io import BytesIO
+from typing import Iterable, Union
 
 import numpy as np
+import onnx
 from onnx import ModelProto
 from typing_extensions import TypeAlias
 
@@ -56,3 +59,47 @@ def convert_tensor(tensor: TensorType, target_type: type) -> TensorType:
     if tf and target_type is tf.Tensor:
         return tf.convert_to_tensor(array)
     raise ValueError(f"Unsupported target type: {target_type}")
+
+
+def torch_to_onnx(
+    model: "torch.nn.Module",
+    inputs: Iterable[TensorType],
+    opset: int,
+    dynamic_batch: bool = True,
+) -> ModelProto:
+    """
+    Converts a PyTorch model to an ONNX model.
+
+    :param model: The PyTorch model to convert.
+    :param inputs: Sample inputs to the model matching the model's forward
+        signature as an iterable sequence, even if only one input is provided.
+    :param opset: The ONNX opset version to use.
+    :param dynamic_batch: Whether to interpret the first dimension of the inputs
+        as a dynamic batch size.
+
+    :return: The converted ONNX ModelProto object.
+    """
+    # Get the device of the model.
+    try:
+        device = next(model.parameters()).device
+    except StopIteration:
+        device = "cpu"
+
+    # Preprocess inputs.
+    args = tuple(convert_tensor(inp, torch.Tensor).to(device) for inp in inputs)
+    input_names = list(inspect.signature(model.forward).parameters.keys())
+
+    # Convert to ONNX.
+    buffer = BytesIO()
+    torch.onnx.export(
+        model,
+        args,
+        buffer,
+        opset_version=opset,
+        input_names=input_names,
+        dynamic_axes=(
+            {name: {0: "batch_size"} for name in input_names} if dynamic_batch else None
+        ),
+    )
+    buffer.seek(0)
+    return onnx.load_model(buffer)
