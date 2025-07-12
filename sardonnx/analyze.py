@@ -2,6 +2,8 @@
 Explore existing ONNX models.
 """
 
+from collections import defaultdict
+
 from onnx import GraphProto, NodeProto
 
 
@@ -9,12 +11,61 @@ class MalformedGraphError(ValueError):
     """Raised when an ONNX graph is structurally invalid or inconsistent."""
 
 
+def first_op_nodes(
+    graph: GraphProto, op_type: str | set[str], num: int | None = 1
+) -> tuple[list[NodeProto], list[int]]:
+    """
+    Conducts a breadth first search from the graph inputs to identify the first
+    `num` nodes of a particular op type.
+
+    NOTE: More than `num` nodes may be returned as the final frontier will be
+    fully explored to allow nodes at the same depth to both be identified.
+
+    :param graph: The ONNX graph to search in.
+    :param op_type: The op type to search for. A full list can be found
+        [here](https://onnx.ai/onnx/operators/).
+    :param num: The target number of nodes to return. If `None`, all nodes of the
+        op type will be returned.
+
+    :return: A list of the first nodes of the given op type in the graph in the
+        order of discovery and a list of the corresponding depths.
+    """
+    if isinstance(op_type, str):
+        op_type = {op_type}
+
+    nextmap: defaultdict[str, list[NodeProto]] = defaultdict(list)
+    for node in graph.node:
+        for inp in node.input:
+            nextmap[inp].append(node)
+
+    explored: set[int] = set()
+    curr_frontier = [inp.name for inp in graph.input]
+    next_frontier: list[str] = []
+    results: list[NodeProto] = []
+    depths: list[int] = []
+    depth = 0
+    while curr_frontier and (num is None or len(results) < num):
+        for name in curr_frontier:
+            for node in nextmap[name]:
+                if id(node) in explored:
+                    continue
+                explored.add(id(node))
+                if node.op_type in op_type:
+                    results.append(node)
+                    depths.append(depth)
+                next_frontier.extend(node.output)
+        curr_frontier = next_frontier
+        next_frontier = []
+        depth += 1
+    return results, depths
+
+
 def last_op_nodes(
     graph: GraphProto, op_type: str | set[str], num: int | None = 1
 ) -> tuple[list[NodeProto], list[int]]:
     """
     Conducts a breadth first search from the graph outpts to identify the last
-    `n` nodes of a particular op type.
+    `num` nodes of a particular op type.
 
     NOTE: More than `num` nodes may be returned as the final frontier will be
     fully explored to allow nodes at the same depth to both be identified.
