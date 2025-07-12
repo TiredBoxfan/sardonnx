@@ -21,6 +21,12 @@ try:
 except ImportError:
     tf = None
 
+try:
+    import tf2onnx
+except ImportError:
+    tf2onnx = None
+
+
 TensorType: TypeAlias = Union[np.ndarray, "torch.Tensor", "tf.Tensor"]
 ModelType: TypeAlias = Union[ModelProto, "torch.nn.Module", "tf.keras.Model"]
 
@@ -103,3 +109,56 @@ def torch_to_onnx(
     )
     buffer.seek(0)
     return onnx.load_model(buffer)
+
+
+def _keras_sequential_to_functional(model: "tf.keras.Sequential") -> "tf.keras.Model":
+    """
+    Converts a Keras Sequential model to an equivalent Functional model.
+
+    :param model: The Keras Sequential model to convert.
+
+    :return: The converted Keras Functional model.
+    """
+    inputs = tf.keras.Input(shape=model.input_shape[1:])
+    outputs = inputs
+    for layer in model.layers:
+        outputs = layer(outputs)
+    return tf.keras.Model(
+        inputs=inputs, outputs=outputs, name=model.name + "_functional"
+    )
+
+
+def keras_to_onnx(
+    model: "tf.keras.Model",
+    opset: int,
+    dynamic_batch: bool = True,
+) -> ModelProto:
+    """
+    Converts a Keras model to an ONNX model.
+
+    :param model: The Keras model to convert.
+    :param opset: The ONNX opset version to use.
+    :param dynamic_batch: Whether to interpret the first dimension of the inputs
+        as a dynamic batch size.
+
+    :return: The converted ONNX ModelProto object.
+
+    :raises ValueError: If the model's input is not defined.
+    """
+    # Model must use the functional API.
+    if isinstance(model, tf.keras.Sequential):
+        model = _keras_sequential_to_functional(model)
+
+    if not model.inputs:
+        raise ValueError("Model has no inputs to infer the signature from.")
+
+    signature = [
+        tf.TensorSpec(
+            shape=[None if dynamic_batch else inp.shape[0] or 1, *inp.shape[1:]],
+            dtype=inp.dtype,
+            name=inp.name,
+        )
+        for inp in model.inputs
+    ]
+    onnx_model, _ = tf2onnx.convert.from_keras(model, signature, opset)
+    return onnx_model
