@@ -45,3 +45,32 @@ def set_batch(graph: GraphProto, value: int | str) -> None:
             dim.dim_value = value
         else:
             dim.dim_param = value
+
+
+def rename_components(graph: GraphProto, mapping: dict[str, str]) -> None:
+    """
+    Renames the components of an ONNX graph in place for all proto types.
+    No checks are done for collisions.
+
+    :param graph: The ONNX GraphProto object to modify.
+    :param mapping: A mapping of old names to new names. Components with names
+        not in the mapping will not be modified.
+    """
+    for init in graph.initializer:
+        init.name = mapping.get(init.name, init.name)
+
+    for inp in graph.input:
+        inp.name = mapping.get(inp.name, inp.name)
+
+    for node in graph.node:
+        node.name = mapping.get(node.name, node.name)
+        for i, inp in enumerate(node.input):
+            node.input[i] = mapping.get(inp, inp)
+        for i, out in enumerate(node.output):
+            node.output[i] = mapping.get(out, out)
+
+    for out in graph.output:
+        out.name = mapping.get(out.name, out.name)
+
+    for val in graph.value_info:
+        val.name = mapping.get(val.name, val.name)
