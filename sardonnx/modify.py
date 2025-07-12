@@ -4,6 +4,7 @@ Modifications to existing ONNX models.
 
 import itertools
 from io import BytesIO
+from tempfile import NamedTemporaryFile
 
 import onnx
 from onnx import GraphProto, ModelProto
@@ -21,6 +22,33 @@ def clone_model(model: ModelProto) -> ModelProto:
     onnx.save_model(model, buffer)
     buffer.seek(0)
     return onnx.load_model(buffer)
+
+
+def get_submodel(
+    model: ModelProto,
+    input_names: list[str] | None,
+    output_names: list[str] | None,
+) -> ModelProto:
+    """
+    Extracts a submodel from an ONNX model.
+
+    :param model: The ONNX model to extract from.
+    :param input_names: The names of the values to use as inputs.
+        If `None`, the original inputs will be used.
+    :param output_names: The names of the values to use as outputs.
+        If `None`, the original outputs will be used.
+
+    :return: The extracted submodel ModelProto.
+    """
+    if input_names is None:
+        input_names = [inp.name for inp in model.graph.input]
+    if output_names is None:
+        output_names = [out.name for out in model.graph.output]
+    with NamedTemporaryFile() as f_in, NamedTemporaryFile() as f_out:
+        onnx.save_model(model, f_in.name)
+        f_in.flush()
+        onnx.utils.extract_model(f_in.name, f_out.name, input_names, output_names)
+        return onnx.load_model(f_out.name)
 
 
 def set_batch(graph: GraphProto, value: int | str) -> None:
