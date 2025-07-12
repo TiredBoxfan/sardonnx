@@ -24,5 +24,8 @@ tensorflow = [
     "tf2onnx"
 ]
 
+[tool.setuptools]
+packages = { find = { include = ["sardonnx*"] } }
+
 [tool.isort]
 profile = "black"
